@@ -1,65 +1,71 @@
-import { getRepository } from "typeorm";
-import { Task } from "../entities/Task";
-import { Project } from "../entities/Project";
+import { Task } from "../models/Task";
+import { Project } from "../models/Project";
 
 export const taskResolver = {
   Query: {
     tasks: async () => {
-      const taskRepository = getRepository(Task);
-      return await taskRepository.find({ relations: ["project"] });
+      return await Task.find().populate("project");
     },
 
-    task: async ( { id }: { id: number }) => {
-      const taskRepository = getRepository(Task);
-      return await taskRepository.findOne({
-        where: { id },
-        relations: ["project"]
-      });
+    task: async (_: any, { id }: { id: string }) => {
+      return await Task.findById(id).populate("project");
     }
   },
 
   Mutation: {
-    createTask: async ( { input }: { input: any }) => {
-      const taskRepository = getRepository(Task);
-      const projectRepository = getRepository(Project);
-
-      const project = await projectRepository.findOne(input.projectId);
+    createTask: async (_: any, { input }: { input: any }) => {
+      const project = await Project.findById(input.projectId);
       if (!project) throw new Error("Project not found");
 
-      const task = taskRepository.create({
-        ...input,
-        project: project
+      const task = new Task({
+        title: input.title,
+        description: input.description,
+        status: input.status || "TODO",
+        project: input.projectId
       });
-      return await taskRepository.save(task);
+
+      const savedTask = await task.save();
+
+      // Добавляем задачу в массив задач проекта
+      project.tasks.push(savedTask._id);
+      await project.save();
+
+      return savedTask;
     },
 
-    updateTask: async ( { id, input }: { id: number, input: any }) => {
-      const taskRepository = getRepository(Task);
-      const task = await taskRepository.findOne({
-        where: { id },
-        relations: ["project"]
-      });
+    updateTask: async (_: any, { id, input }: { id: string, input: any }) => {
+      const task = await Task.findByIdAndUpdate(
+        id,
+        { $set: input },
+        { new: true, runValidators: true }
+      ).populate("project");
       
       if (!task) throw new Error("Task not found");
-
-      taskRepository.merge(task, input);
-      return await taskRepository.save(task);
+      return task;
     },
 
-    updateTaskStatus: async ( { id, status }: { id: number, status: string }) => {
-      const taskRepository = getRepository(Task);
-      const task = await taskRepository.findOne({where: { id }});
+    updateTaskStatus: async (_: any, { id, status }: { id: string, status: string }) => {
+      const task = await Task.findByIdAndUpdate(
+        id,
+        { $set: { status } },
+        { new: true, runValidators: true }
+      );
       
       if (!task) throw new Error("Task not found");
-
-      task.status = status;
-      return await taskRepository.save(task);
+      return task;
     },
 
-    deleteTask: async ( { id }: { id: number }) => {
-      const taskRepository = getRepository(Task);
-      const result = await taskRepository.delete(id);
-      return result.affected > 0;
+    deleteTask: async (_: any, { id }: { id: string }) => {
+      const task = await Task.findById(id);
+      if (!task) return false;
+
+      // Удаляем задачу из массива задач проекта
+      await Project.findByIdAndUpdate(task.project, {
+        $pull: { tasks: id }
+      });
+
+      const result = await Task.findByIdAndDelete(id);
+      return !!result;
     }
   }
 };

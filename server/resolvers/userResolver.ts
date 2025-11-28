@@ -1,46 +1,51 @@
-import { getRepository } from "typeorm";
-import { User } from "../entities/User";
-import { Query } from "typeorm/driver/Query.js";
+import { User } from "../models/User";
+import { Project } from "../models/Project";
+import { Task } from "../models/Task";
 
 export const userResolver = {
     Query: {
         users: async () => {
-            const userRepository = getRepository(User);
-            return await userRepository.find({relations: ["projects"]});
+            return await User.find().populate("projects");
         },
 
-        user: async ( { id }: { id: number }) => {
-            // достаем id из аргументов
-            const userRepository = getRepository(User);
-            return await userRepository.findOne({ 
-            where: { id },
-            relations: ["projects"] 
-          });
+        user: async (_: any, { id }: { id: string }) => {
+            return await User.findById(id).populate("projects");
         },
     },
 
     Mutation: {
-    createUser: async ( { input }: { input: any }) => {
-      // достаем input из аргументов
-      
-      const userRepository = getRepository(User);
-      const user = userRepository.create(input);
-      return await userRepository.save(user);
-    },
+        createUser: async (_: any, { input }: { input: any }) => {
+            const user = new User(input);
+            return await user.save();
+        },
 
-    updateUser: async ( { id, input }: { id: number, input: any }) => {
-      const userRepository = getRepository(User);
-      const user = await userRepository.findOne({where: { id }});
-      if (!user) throw new Error("User not found");
-      
-      userRepository.merge(user, input);
-      return await userRepository.save(user);
-    },
+        updateUser: async (_: any, { id, input }: { id: string, input: any }) => {
+            const user = await User.findByIdAndUpdate(
+                id,
+                { $set: input },
+                { new: true, runValidators: true }
+            );
+            if (!user) throw new Error("User not found");
+            return user;
+        },
 
-    deleteUser: async ({ id }: { id: number }) => {
-      const userRepository = getRepository(User);
-      const result = await userRepository.delete(id);
-      return result.affected! > 0;
+        deleteUser: async (_: any, { id }: { id: string }) => {
+            const user = await User.findById(id);
+            if (!user) return false;
+
+            // Удаляем все проекты пользователя 
+            const projects = await Project.find({ user: id });
+            const projectIds = projects.map(p => p._id);
+
+            // Удаляем все задачи этих проектов
+            await Task.deleteMany({ project: { $in: projectIds } });
+
+            // Удаляем все проекты
+            await Project.deleteMany({ user: id });
+
+            // Удаляем пользователя
+            const result = await User.findByIdAndDelete(id);
+            return !!result;
+        }
     }
-  }
 };

@@ -1,20 +1,14 @@
-import "reflect-metadata"; // Обязательно для TypeORM
 import express from "express";
 import { ApolloServer } from "apollo-server-express";
 import { typeDefs } from "./type-defs";
 import { resolvers } from "./resolvers";
-import { AppDataSource } from "./data-source";
+import { connectDatabase } from "./config/database";
 
 async function startServer() {
-  const app = express();
+  // Подключаемся к MongoDB
+  await connectDatabase();
 
-  try {
-    await AppDataSource.initialize();
-    console.log("Connected to DB");
-  } catch (error) {
-    console.error("Connection to DB failed:", error);
-    return;
-  }
+  const app = express();
 
   const server = new ApolloServer({
     typeDefs,
@@ -27,7 +21,7 @@ async function startServer() {
   // подключает GraphQL сервер к Express серверу
   server.applyMiddleware({ app });
 
-  const PORT = 4000;
+  const PORT = process.env.PORT || 4000;
   app.listen(PORT, () => {
     console.log(
       `Server ready at http://localhost:${PORT}${server.graphqlPath}`,
